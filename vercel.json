@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "env": {
+    "OPENAI_API_KEY": "@openai_api_key",
+    "ANTHROPIC_API_KEY": "@anthropic_api_key",
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_ANON_KEY": "@supabase_anon_key",
+    "AWS_S3_BUCKET": "@aws_s3_bucket",
+    "AWS_ACCESS_KEY_ID": "@aws_access_key_id",
+    "AWS_SECRET_ACCESS_KEY": "@aws_secret_access_key",
+    "JWT_SECRET": "@jwt_secret",
+    "GITHUB_CLIENT_ID": "@github_client_id",
+    "GITHUB_CLIENT_SECRET": "@github_client_secret",
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 900,
+      "memory": 3008
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+        }
+      ]
+    }
+  ]
+}

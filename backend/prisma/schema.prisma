@@ -1,0 +1,95 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(cuid())
+  clerkId       String     @unique
+  email         String     @unique
+  name          String?
+  image         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  videos        Video[]
+  posts         Post[]
+}
+
+model Video {
+  id            String     @id @default(cuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  filename      String
+  size          Int
+  duration      Int?
+  blobUrl       String?
+  s3Url         String?
+  transcription String?
+  status        String     @default("uploaded") // uploaded, transcribing, transcribed, generating, completed, error
+  errorMessage  String?
+  posts         Post[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Post {
+  id            String     @id @default(cuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  videoId       String
+  video         Video      @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  platform      String     // linkedin, twitter, instagram
+  content       String
+  imageUrl      String?
+  status        String     @default("draft") // draft, published, scheduled
+  scheduledFor  DateTime?
+  metrics       Metrics?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([platform])
+  @@index([status])
+}
+
+model Metrics {
+  id            String     @id @default(cuid())
+  postId        String     @unique
+  post          Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  views         Int        @default(0)
+  likes         Int        @default(0)
+  comments      Int        @default(0)
+  shares        Int        @default(0)
+  clicks        Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([postId])
+}
+
+model UploadLog {
+  id            String     @id @default(cuid())
+  userId        String
+  videoId       String?
+  action        String     // upload, transcribe, generate, export
+  status        String     // success, failure
+  duration      Int?       // milliseconds
+  errorMessage  String?
+  metadata      String?    // JSON
+  createdAt     DateTime   @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
