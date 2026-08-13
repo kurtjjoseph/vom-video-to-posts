@@ -1,0 +1,9 @@
+{
+  "name": "vom-video-to-posts",
+  "version": "0.1.0",
+  "description": "VOM Video-to-Posts Pipeline",
+  "scripts": {
+    "build": "echo 'Building...'",
+    "start": "echo 'Starting...'"
+  }
+}
