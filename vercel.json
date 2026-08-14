@@ -3,16 +3,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "env": {
-    "OPENAI_API_KEY": "@openai_api_key",
-    "ANTHROPIC_API_KEY": "@anthropic_api_key",
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_ANON_KEY": "@supabase_anon_key",
-    "AWS_S3_BUCKET": "@aws_s3_bucket",
-    "AWS_ACCESS_KEY_ID": "@aws_access_key_id",
-    "AWS_SECRET_ACCESS_KEY": "@aws_secret_access_key",
-    "JWT_SECRET": "@jwt_secret",
-    "GITHUB_CLIENT_ID": "@github_client_id",
-    "GITHUB_CLIENT_SECRET": "@github_client_secret",
     "NODE_ENV": "production"
   },
   "functions": {
