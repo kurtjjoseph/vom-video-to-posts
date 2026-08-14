@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useApi, Video } from '../services/api';
+import { useApi } from '../hooks/useApi';
+import { Video } from '../services/api';
 import UploadZone from '../components/UploadZone';
 import { CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useApi, Post } from '../services/api';
+import { useApi } from '../hooks/useApi';
+import { Post } from '../services/api';
 import PostEditor from '../components/PostEditor';
 import { Download, Trash2, Edit2 } from 'lucide-react';
 import toast from 'react-hot-toast';

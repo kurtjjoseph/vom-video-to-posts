@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useApi, Video } from '../services/api';
+import { useApi } from '../hooks/useApi';
+import { Video } from '../services/api';
 import { Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
 
