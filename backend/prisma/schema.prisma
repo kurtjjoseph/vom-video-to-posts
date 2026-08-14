@@ -32,8 +32,11 @@ model Video {
   duration      Int?
   blobUrl       String?
   s3Url         String?
+  // Object key in the Supabase storage bucket, set when the signed
+  // upload URL is minted and the browser uploads directly.
+  storagePath   String?
   transcription String?
-  status        String     @default("uploaded") // uploaded, transcribing, transcribed, generating, completed, error
+  status        String     @default("pending") // pending, uploaded, transcribing, transcribed, generating, completed, error
   errorMessage  String?
   posts         Post[]
   createdAt     DateTime   @default(now())

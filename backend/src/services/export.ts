@@ -59,7 +59,7 @@ export async function exportPostsAsCSV(videoId: string): Promise<string> {
   });
 
   const video = await prisma.video.findUnique({
-    where: { videoId },
+    where: { id: videoId },
     select: { title: true },
   });
 

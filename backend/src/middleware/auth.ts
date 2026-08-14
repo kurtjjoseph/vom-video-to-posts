@@ -1,8 +1,21 @@
 import { Request, Response, NextFunction } from 'express';
-import { clerkClient } from '@clerk/clerk-sdk-node';
+import { createClerkClient, verifyToken } from '@clerk/backend';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY,
+});
+
+// The client sends a Clerk session JWT as a bearer token; verifyToken
+// validates it and returns the claims, with the user id in `sub`.
+async function verifySessionToken(token: string) {
+  const claims = await verifyToken(token, {
+    secretKey: process.env.CLERK_SECRET_KEY || '',
+  });
+  return { userId: claims.sub };
+}
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -26,7 +39,7 @@ export const authMiddleware = async (
     const token = authHeader.substring(7);
 
     // Verify token with Clerk
-    const session = await clerkClient.sessions.verifySession(token);
+    const session = await verifySessionToken(token);
 
     if (!session || !session.userId) {
       res.status(401).json({ error: 'Invalid session' });
@@ -84,7 +97,7 @@ export const optionalAuth = async (
       const token = authHeader.substring(7);
 
       try {
-        const session = await clerkClient.sessions.verifySession(token);
+        const session = await verifySessionToken(token);
         if (session && session.userId) {
           const clerkUser = await clerkClient.users.getUser(session.userId);
           const email = clerkUser?.emailAddresses[0]?.emailAddress;

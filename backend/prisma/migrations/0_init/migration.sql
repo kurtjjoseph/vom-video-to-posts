@@ -21,6 +21,7 @@ CREATE TABLE "Video" (
     "duration" INTEGER,
     "blobUrl" TEXT,
     "s3Url" TEXT,
+    "storagePath" TEXT,
     "transcription" TEXT,
     "status" TEXT NOT NULL DEFAULT 'uploaded',
     "errorMessage" TEXT,

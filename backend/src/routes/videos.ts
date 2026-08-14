@@ -1,77 +1,109 @@
 import express, { Router } from 'express';
-import multer from 'multer';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthenticatedRequest, authMiddleware } from '../middleware/auth.js';
-import { uploadVideo } from '../services/storage.js';
+import { createSignedUpload } from '../services/storage.js';
 import { transcribeVideo } from '../services/transcription.js';
 import { generatePosts } from '../services/postGeneration.js';
 
 const router = Router();
 const prisma = new PrismaClient();
-const upload = multer({ limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB
 
-// POST /api/videos - Upload video
-router.post(
-  '/',
-  authMiddleware,
-  upload.single('video'),
-  async (req: AuthenticatedRequest, res) => {
-    try {
-      if (!req.file) {
-        res.status(400).json({ error: 'No video file provided' });
-        return;
-      }
-
-      if (!req.userId) {
-        res.status(401).json({ error: 'User not authenticated' });
-        return;
-      }
-
-      const title = req.body.title || req.file.originalname;
-      const filename = req.file.originalname;
-      const size = req.file.size;
-
-      // Upload to storage
-      const fileUrl = await uploadVideo(req.file.buffer, filename);
-
-      // Create video record
-      const video = await prisma.video.create({
-        data: {
-          userId: req.userId,
-          title,
-          filename,
-          size,
-          blobUrl: fileUrl.includes('blob.vercel') ? fileUrl : undefined,
-          s3Url: fileUrl.includes('amazonaws') ? fileUrl : undefined,
-          status: 'uploaded',
-        },
-      });
-
-      // Log upload
-      await prisma.uploadLog.create({
-        data: {
-          userId: req.userId,
-          videoId: video.id,
-          action: 'upload',
-          status: 'success',
-          metadata: JSON.stringify({ size, filename }),
-        },
-      });
-
-      res.json({
-        success: true,
-        data: video,
-        message: 'Video uploaded successfully',
-      });
-    } catch (error) {
-      console.error('Video upload error:', error);
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Upload failed',
-      });
+// POST /api/videos/upload-url - mint a direct-to-storage upload URL
+//
+// The video itself never passes through this API: a serverless request body
+// cannot carry a 500MB file. The browser PUTs the file to the signed URL
+// returned here, then calls /:id/complete below.
+router.post('/upload-url', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
     }
+
+    const { filename, size, title } = req.body as {
+      filename?: string;
+      size?: number;
+      title?: string;
+    };
+
+    if (!filename || typeof size !== 'number') {
+      res.status(400).json({ error: 'filename and size are required' });
+      return;
+    }
+
+    const MAX_BYTES = 500 * 1024 * 1024;
+    if (size > MAX_BYTES) {
+      res.status(413).json({ error: 'Video exceeds the 500MB limit' });
+      return;
+    }
+
+    const { path, signedUrl, token } = await createSignedUpload(req.userId, filename);
+
+    // Record the video up front so the client has an id to report back against.
+    const video = await prisma.video.create({
+      data: {
+        userId: req.userId,
+        title: title || filename,
+        filename,
+        size,
+        storagePath: path,
+        status: 'pending',
+      },
+    });
+
+    res.json({
+      success: true,
+      data: { videoId: video.id, uploadUrl: signedUrl, token, path },
+    });
+  } catch (error) {
+    console.error('Upload URL error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Could not create upload URL',
+    });
   }
-);
+});
+
+// POST /api/videos/:id/complete - browser reports the direct upload finished
+router.post('/:id/complete', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    if (!req.userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    const video = await prisma.video.findFirst({
+      where: { id: req.params.id, userId: req.userId },
+    });
+
+    if (!video) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    const updated = await prisma.video.update({
+      where: { id: video.id },
+      data: { status: 'uploaded' },
+    });
+
+    await prisma.uploadLog.create({
+      data: {
+        userId: req.userId,
+        videoId: video.id,
+        action: 'upload',
+        status: 'success',
+        metadata: JSON.stringify({ size: video.size, filename: video.filename }),
+      },
+    });
+
+    res.json({ success: true, data: updated, message: 'Video uploaded successfully' });
+  } catch (error) {
+    console.error('Upload completion error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Could not finalize upload',
+    });
+  }
+});
 
 // GET /api/videos - List user's videos
 router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {

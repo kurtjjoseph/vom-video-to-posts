@@ -80,3 +80,64 @@ export async function deleteVideo(url: string): Promise<void> {
     }
   }
 }
+
+// --- Direct browser upload -------------------------------------------------
+//
+// Vercel caps a serverless request body well below the 500MB videos this app
+// accepts, so the file must never pass through the API. Instead the API mints
+// a short-lived signed URL and the browser PUTs the file straight to Supabase
+// Storage; the API only ever sees metadata.
+
+import { createClient } from '@supabase/supabase-js';
+
+const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || 'videos';
+
+function supabaseAdmin() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      'SUPABASE_URL and SUPABASE_SERVICE_KEY must be set to issue upload URLs'
+    );
+  }
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+export interface SignedUpload {
+  /** Storage path the object will live at once uploaded. */
+  path: string;
+  /** Short-lived URL the browser PUTs the file to. */
+  signedUrl: string;
+  /** Opaque token Supabase requires alongside the signed URL. */
+  token: string;
+}
+
+export async function createSignedUpload(
+  userId: string,
+  filename: string
+): Promise<SignedUpload> {
+  const path = `${userId}/${uuidv4()}-${filename}`;
+  const { data, error } = await supabaseAdmin()
+    .storage.from(VIDEO_BUCKET)
+    .createSignedUploadUrl(path);
+
+  if (error || !data) {
+    throw new Error(`Could not create upload URL: ${error?.message}`);
+  }
+  return { path, signedUrl: data.signedUrl, token: data.token };
+}
+
+/** Signed read URL the transcription step uses to fetch the uploaded file. */
+export async function createSignedReadUrl(
+  path: string,
+  expiresInSeconds = 3600
+): Promise<string> {
+  const { data, error } = await supabaseAdmin()
+    .storage.from(VIDEO_BUCKET)
+    .createSignedUrl(path, expiresInSeconds);
+
+  if (error || !data) {
+    throw new Error(`Could not sign read URL: ${error?.message}`);
+  }
+  return data.signedUrl;
+}
