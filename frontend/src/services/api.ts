@@ -77,7 +77,9 @@ class ApiClient {
     const { upload } = await import('@vercel/blob/client');
 
     const blob = await upload(file.name, file, {
-      access: 'public',
+      // The store is private: blobs need a token to read, which is what we
+      // want for internal recordings. Public would make any URL world-readable.
+      access: 'private',
       handleUploadUrl: `${API_URL}/videos/upload`,
       clientPayload: JSON.stringify({ title }),
       onUploadProgress: ({ percentage }) => onProgress?.(percentage),

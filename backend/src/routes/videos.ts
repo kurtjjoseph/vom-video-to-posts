@@ -30,6 +30,7 @@ router.post('/upload', authMiddleware, async (req: AuthenticatedRequest, res) =>
       token: requireBlobToken(),
 
       onBeforeGenerateToken: async (pathname) => ({
+        addRandomSuffix: true,
         allowedContentTypes: ['video/mp4', 'video/quicktime', 'video/webm'],
         maximumSizeInBytes: 500 * 1024 * 1024,
         // Survives the round trip so onUploadCompleted knows who uploaded.
