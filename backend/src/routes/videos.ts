@@ -2,105 +2,106 @@ import express, { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthenticatedRequest, authMiddleware } from '../middleware/auth.js';
-import { createSignedUpload } from '../services/storage.js';
+import { handleUpload, requireBlobToken } from '../services/storage.js';
+import type { HandleUploadBody } from '../services/storage.js';
 import { transcribeVideo } from '../services/transcription.js';
 import { generatePosts } from '../services/postGeneration.js';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// POST /api/videos/upload-url - mint a direct-to-storage upload URL
+// POST /api/videos/upload - issue a client token, then record the result
 //
-// The video itself never passes through this API: a serverless request body
-// cannot carry a 500MB file. The browser PUTs the file to the signed URL
-// returned here, then calls /:id/complete below.
-router.post('/upload-url', authMiddleware, async (req: AuthenticatedRequest, res) => {
+// The video never passes through this API: a serverless request body cannot
+// carry a 500MB file. @vercel/blob's handleUpload serves both halves of the
+// exchange — it hands the browser a scoped, short-lived token, then calls
+// onUploadCompleted once Blob has the file.
+router.post('/upload', authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     if (!req.userId) {
       res.status(401).json({ error: 'User not authenticated' });
       return;
     }
+    const userId = req.userId;
 
-    const { filename, size, title } = req.body as {
-      filename?: string;
-      size?: number;
-      title?: string;
-    };
+    const result = await handleUpload({
+      body: req.body as HandleUploadBody,
+      request: req as unknown as Request,
+      token: requireBlobToken(),
 
-    if (!filename || typeof size !== 'number') {
-      res.status(400).json({ error: 'filename and size are required' });
-      return;
-    }
+      onBeforeGenerateToken: async (pathname) => ({
+        allowedContentTypes: ['video/mp4', 'video/quicktime', 'video/webm'],
+        maximumSizeInBytes: 500 * 1024 * 1024,
+        // Survives the round trip so onUploadCompleted knows who uploaded.
+        tokenPayload: JSON.stringify({ userId, pathname }),
+      }),
 
-    const MAX_BYTES = 500 * 1024 * 1024;
-    if (size > MAX_BYTES) {
-      res.status(413).json({ error: 'Video exceeds the 500MB limit' });
-      return;
-    }
-
-    const { path, signedUrl, token } = await createSignedUpload(req.userId, filename);
-
-    // Record the video up front so the client has an id to report back against.
-    const video = await prisma.video.create({
-      data: {
-        userId: req.userId,
-        title: title || filename,
-        filename,
-        size,
-        storagePath: path,
-        status: 'pending',
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        const { userId: owner } = JSON.parse(tokenPayload || '{}');
+        const video = await prisma.video.create({
+          data: {
+            userId: owner,
+            title: blob.pathname,
+            filename: blob.pathname,
+            size: 0,
+            blobUrl: blob.url,
+            storagePath: blob.pathname,
+            status: 'uploaded',
+          },
+        });
+        await prisma.uploadLog.create({
+          data: {
+            userId: owner,
+            videoId: video.id,
+            action: 'upload',
+            status: 'success',
+            metadata: JSON.stringify({ url: blob.url }),
+          },
+        });
       },
     });
 
-    res.json({
-      success: true,
-      data: { videoId: video.id, uploadUrl: signedUrl, token, path },
-    });
+    res.json(result);
   } catch (error) {
-    console.error('Upload URL error:', error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Could not create upload URL',
+    console.error('Upload error:', error);
+    res.status(400).json({
+      error: error instanceof Error ? error.message : 'Upload failed',
     });
   }
 });
 
-// POST /api/videos/:id/complete - browser reports the direct upload finished
-router.post('/:id/complete', authMiddleware, async (req: AuthenticatedRequest, res) => {
+// GET /api/videos/by-url - resolve the row onUploadCompleted just created
+//
+// The browser uploads straight to Blob, so it learns the blob URL before it
+// knows the video id. This closes that gap.
+router.get('/by-url', authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     if (!req.userId) {
       res.status(401).json({ error: 'User not authenticated' });
       return;
     }
-
-    const video = await prisma.video.findFirst({
-      where: { id: req.params.id, userId: req.userId },
-    });
-
-    if (!video) {
-      res.status(404).json({ error: 'Video not found' });
+    const url = String(req.query.url || '');
+    if (!url) {
+      res.status(400).json({ error: 'url is required' });
       return;
     }
 
-    const updated = await prisma.video.update({
-      where: { id: video.id },
-      data: { status: 'uploaded' },
+    const video = await prisma.video.findFirst({
+      where: { userId: req.userId, blobUrl: url },
+      orderBy: { createdAt: 'desc' },
     });
 
-    await prisma.uploadLog.create({
-      data: {
-        userId: req.userId,
-        videoId: video.id,
-        action: 'upload',
-        status: 'success',
-        metadata: JSON.stringify({ size: video.size, filename: video.filename }),
-      },
-    });
+    if (!video) {
+      // onUploadCompleted is a webhook from Blob and can land a moment late.
+      res.status(404).json({ error: 'Video not recorded yet' });
+      return;
+    }
 
-    res.json({ success: true, data: updated, message: 'Video uploaded successfully' });
+    res.json({ success: true, data: video });
   } catch (error) {
-    console.error('Upload completion error:', error);
+    console.error('Lookup error:', error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : 'Could not finalize upload',
+      error: error instanceof Error ? error.message : 'Lookup failed',
     });
   }
 });

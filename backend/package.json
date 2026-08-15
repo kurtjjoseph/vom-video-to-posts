@@ -15,7 +15,7 @@
   "dependencies": {
     "@clerk/backend": "^3.16.5",
     "@prisma/client": "^5.7.0",
-    "@supabase/supabase-js": "^2.39.0",
+    "@vercel/blob": "^2.8.0",
     "aws-sdk": "^2.1563.0",
     "axios": "^1.6.2",
     "cors": "^2.8.5",

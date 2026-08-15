@@ -66,38 +66,26 @@ class ApiClient {
 
   // Videos
   //
-  // The file goes straight from the browser to storage. The API only mints a
-  // signed URL and records the result, so a 500MB video never has to fit
-  // inside a serverless request body.
+  // The file goes straight from the browser to Vercel Blob. The API only
+  // issues a scoped upload token and records the result, so a 500MB video
+  // never has to fit inside a serverless request body.
   async uploadVideo(
     file: File,
     title: string,
     onProgress?: (percent: number) => void
   ): Promise<Video> {
-    const { data: ticket } = await this.client.post<{
-      success: boolean;
-      data: { videoId: string; uploadUrl: string; token: string; path: string };
-    }>('/videos/upload-url', {
-      filename: file.name,
-      size: file.size,
-      title,
+    const { upload } = await import('@vercel/blob/client');
+
+    const blob = await upload(file.name, file, {
+      access: 'public',
+      handleUploadUrl: `${API_URL}/videos/upload`,
+      clientPayload: JSON.stringify({ title }),
+      onUploadProgress: ({ percentage }) => onProgress?.(percentage),
     });
 
-    const { videoId, uploadUrl } = ticket.data;
-
-    // Straight to storage — deliberately not through `this.client`, so the
-    // API's auth header and base URL are not attached to the storage PUT.
-    await axios.put(uploadUrl, file, {
-      headers: { 'Content-Type': file.type || 'video/mp4' },
-      onUploadProgress: (e) => {
-        if (onProgress && e.total) {
-          onProgress(Math.round((e.loaded / e.total) * 100));
-        }
-      },
-    });
-
-    const response = await this.client.post<{ success: boolean; data: Video }>(
-      `/videos/${videoId}/complete`
+    // onUploadCompleted has created the row by now; fetch it back.
+    const response = await this.client.get<{ success: boolean; data: Video }>(
+      `/videos/by-url?url=${encodeURIComponent(blob.url)}`
     );
     return response.data.data;
   }
